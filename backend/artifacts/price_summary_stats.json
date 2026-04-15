@@ -1,0 +1,16 @@
+{
+  "target": "SalePrice",
+  "currency": "USD",
+  "median_price": 0,
+  "typical_range": {
+    "low": 0,
+    "high": 0
+  },
+  "quantiles": {
+    "p10": 0,
+    "p25": 0,
+    "p75": 0,
+    "p90": 0
+  },
+  "version": "v1"
+}

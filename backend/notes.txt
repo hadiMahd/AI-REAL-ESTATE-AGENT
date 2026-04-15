@@ -1,0 +1,31 @@
+"""
+The practical frontend flow is:
+
+User enters free text like “3-bed in a good area”.
+Frontend calls stage 1 and gets partial extraction.
+If ready_for_prediction is false, the UI switches to a review form.
+The form pre-fills whatever the LLM found, highlights missing fields, and blocks prediction until all required fields are complete.
+User can manually fill the gaps and submit again.
+Once all fields are present, the frontend sends the completed payload to the prediction endpoint.
+User can specify values manually or select not present and the built in
+pipeline in the model joblib file will handle missing values gracefully.
+"""
+
+"""
+— LLM Prompt Chain —
+06 Stage 1 — Feature Extraction
+The LLM parses a natural language query into typed feature values matching your Pydantic schema. Include a completeness signal
+— which features were confidently extracted vs. which are missing. Do not silently fill gaps with defaults. If the user says "3-bed in a
+good area" and your model needs 12 features, Stage 1 reports what it found and what is still needed. The UI lets the user review and
+fill gaps before prediction runs.
+07 Stage 2 — Prediction Interpretation
+Feed Stage 2 the extracted features, the prediction, and summary stats from your training data (median price, typical range). The
+interpretation goes beyond the number — is it high or low, what is driving it, how does it compare. This is the second link in the chain:
+Stage 1 output → ML → Stage 2 prompt.
+08 Prompt Versioning
+Two prompt variants for extraction. Run both on 3+ test queries. Log: version, input, output, validation result. Pick the winner with
+evidence. Prompts are code.
+09 Schemas and Error Handling
+Two Pydantic schemas minimum: extracted features (with completeness metadata) and combined response. Catch API errors,
+validation failures, malformed output. Return a fallback. Demonstrate one failure case.
+"""

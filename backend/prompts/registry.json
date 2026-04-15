@@ -1,0 +1,12 @@
+{
+  "stage1": {
+    "default": "stage1_extract_v1.txt",
+    "candidates": [
+      "stage1_extract_v1.txt",
+      "stage1_extract_v2.txt"
+    ]
+  },
+  "stage2": {
+    "default": "stage2_interpret_v1.txt"
+  }
+}

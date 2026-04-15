@@ -17,7 +17,12 @@ load_dotenv(dotenv_path=ENV_FILE, override=False)
 
 def _read_env(name: str, default: str = "") -> str:
     value = os.getenv(name, default)
-    return value.strip() if value is not None else default
+    if value is None:
+        return default
+
+    cleaned = value.strip()
+    # Treat empty env values as missing so defaults still apply.
+    return cleaned if cleaned else default
 
 
 @dataclass(frozen=True)
@@ -54,10 +59,7 @@ def get_settings() -> Settings:
     except ValueError:
         timeout = 120.0
 
-    redis_url = _read_env("REDIS_URL")
-    if not redis_url:
-        # Redis is mandatory in this production-oriented setup.
-        raise ValueError("Missing REDIS_URL. Production setup requires Redis.")
+    redis_url = _read_env("REDIS_URL", "redis://localhost:6379/0")
 
     rate_limit_requests_raw = _read_env("RATE_LIMIT_REQUESTS", "10")
     try:

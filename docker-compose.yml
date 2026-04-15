@@ -1,0 +1,23 @@
+services:
+  # 1. The Redis Service
+  redis_db:
+    image: redis:alpine
+    container_name: redis_container
+    ports:
+      - "6379:6379"
+
+  # 2. Your FastAPI Service
+  api_backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: backend_container
+    ports:
+      - "8000:8000"
+    env_file:
+      - backend/.env
+    environment:
+      # Use the service name 'redis_db' as the hostname
+      - REDIS_URL=redis://redis_db:6379/0
+    depends_on:
+      - redis_db

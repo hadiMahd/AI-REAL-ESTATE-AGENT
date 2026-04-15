@@ -39,6 +39,11 @@ class APIHealthResponse(BaseModel):
     status: str
 
 
+class RedisHealthResponse(BaseModel):
+    ok: bool
+    ping: str
+
+
 app = FastAPI(title='House Price Assistant Backend')
 LOGS_DIR = Path(__file__).resolve().parent / 'logs'
 STAGE1_LOG_FILE = LOGS_DIR / 'stage1_extraction.jsonl'
@@ -116,6 +121,18 @@ def _enforce_rate_limit(request: Request) -> tuple[bool, int]:
 def health() -> APIHealthResponse:
     """Stage flow: infrastructure check only (no Stage 1/ML/interpretation)."""
     return APIHealthResponse(status='ok')
+
+
+@app.get('/health/redis', response_model=RedisHealthResponse)
+def health_redis() -> RedisHealthResponse:
+    """Stage flow: Redis connectivity check only (infrastructure dependency)."""
+    try:
+        # Redis ping is the simplest end-to-end connectivity + responsiveness check.
+        pong = get_redis_client().ping()
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f'Redis unavailable: {exc}') from exc
+
+    return RedisHealthResponse(ok=bool(pong), ping='PONG' if pong else 'NO_PONG')
 
 
 @app.get('/health/llm', response_model=LLMHealthResponse)

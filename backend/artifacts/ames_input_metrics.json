@@ -258,10 +258,10 @@
     },
     "_stage2_prompt_helper": {
         "saleprice_summary": {
-            "median_price": null,
+            "median_price": 250000,
             "typical_range": {
-                "low": null,
-                "high": null,
+                "low": 200000,
+                "high": 350000,
                 "method": "prefer_p10_to_p90"
             }
         },

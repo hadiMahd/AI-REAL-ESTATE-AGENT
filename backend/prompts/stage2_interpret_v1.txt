@@ -11,6 +11,12 @@ Inputs:
 - prediction_value: {{prediction_value}}
 - price_summary_json: {{price_summary_json}}
 - feature_metrics_json: {{feature_metrics_json}}
+- prediction_context: {{prediction_context}}
+
+Important:
+- prediction_value is the raw model output in USD. Do not assume it is normalized or scaled.
+- If price summary fields are null or missing, say the market comparison is unavailable rather than inventing a median or range.
+- Use prediction_context to decide whether to add a caveat about the value being unusually small or possibly scaled.
 
 Guidelines:
 - Compare prediction to median and typical range.
@@ -24,6 +30,5 @@ Output JSON only:
   "summary": "short paragraph",
   "position_vs_market": "below_typical|within_typical|above_typical|unknown",
   "key_drivers": ["...", "..."],
-  "caveats": ["..."],
-  "next_best_inputs": ["..."]
+  "caveats": ["..."]
 }

@@ -28,3 +28,19 @@ class Stage1Output(BaseModel):
 	missing_fields: list[str] = Field(default_factory=list)
 	completeness: float = Field(ge=0.0, le=1.0)
 	ready_for_prediction: bool = False
+
+
+class Stage1PromptCandidate(BaseModel):
+	model_config = ConfigDict(populate_by_name=True, extra="forbid")
+
+	prompt_version: str
+	output: Stage1Output | None = None
+	error: str | None = None
+
+
+class Stage1ExtractionCandidates(BaseModel):
+	model_config = ConfigDict(populate_by_name=True, extra="forbid")
+
+	query: str
+	model: str
+	candidates: list[Stage1PromptCandidate] = Field(default_factory=list)

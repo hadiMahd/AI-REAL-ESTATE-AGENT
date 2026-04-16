@@ -7,7 +7,7 @@ COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project
 
 # Copy backend application code.
-COPY backend ./backend
+COPY . .
 
 EXPOSE 8000
 

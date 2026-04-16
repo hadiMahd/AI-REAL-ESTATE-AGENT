@@ -9,8 +9,8 @@ services:
   # 2. Your FastAPI Service
   api_backend:
     build:
-      context: .
-      dockerfile: backend/Dockerfile
+      context: ./backend
+      dockerfile: Dockerfile
     container_name: backend_container
     ports:
       - "8000:8000"
@@ -21,3 +21,13 @@ services:
       - REDIS_URL=redis://redis_db:6379/0
     #depends_on:
     #  - redis_db
+
+  # --- FRONTEND ---
+  streamlit_ui:
+    build:
+      context: ./frontend   # Tell Docker to "stand" inside the frontend folder
+      dockerfile: Dockerfile # It looks for the file named 'Dockerfile' there
+    ports:
+      - "8501:8501"
+    environment:
+      - BACKEND_URL=http://localhost:8000

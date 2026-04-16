@@ -150,8 +150,15 @@ def _render_final_result(prediction: dict[str, Any], interpretation: dict[str, A
             st.text(str(item))
 
 st.set_page_config(page_title="House Price Assistant", page_icon="🏠", layout="wide")
-st.title("House Price Assistant")
-st.caption("Enter a house description, compare the extracted feature sets, fill any missing values, then get the price and explanation.")
+st.title("AI Real Estate Agent")
+st.markdown(
+    """
+1. Enter a house description.
+2. Compare the extracted feature sets.
+3. Fill any missing values.
+4. Get the predicted price and explanation.
+"""
+)
 
 with st.form("query_form"):
     query = st.text_area(

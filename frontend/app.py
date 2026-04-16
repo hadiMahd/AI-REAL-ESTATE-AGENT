@@ -31,6 +31,21 @@ FEATURE_ORDER = [
 
 FLOAT_FEATURES = {"MasVnrArea", "LotFrontage"}
 
+FEATURE_LABELS = {
+    "OverallQual": "Overall quality",
+    "GrLivArea": "Above-ground living area (sq ft)",
+    "GarageCars": "Garage capacity (cars)",
+    "FullBath": "Full bathrooms",
+    "YearBuilt": "Year built",
+    "YearRemodAdd": "Year remodeled",
+    "MasVnrArea": "Masonry veneer area (sq ft)",
+    "Fireplaces": "Fireplaces",
+    "BsmtFinSF1": "Finished basement area (sq ft)",
+    "LotFrontage": "Lot frontage (ft)",
+    "1stFlrSF": "First floor area (sq ft)",
+    "OpenPorchSF": "Open porch area (sq ft)",
+}
+
 
 def _normalize_feature_key(key: str) -> str:
     if key == "first_flr_sf":
@@ -48,6 +63,23 @@ def _canonicalize_features(raw_features: dict[str, Any] | None) -> dict[str, Any
         if key in canonical:
             canonical[key] = value
     return canonical
+
+
+def _friendly_feature_items(features: dict[str, Any]) -> list[tuple[str, Any]]:
+    items: list[tuple[str, Any]] = []
+    for feature_name in FEATURE_ORDER:
+        items.append((FEATURE_LABELS.get(feature_name, feature_name), features.get(feature_name)))
+    return items
+
+
+def _format_feature_value(value: Any) -> str:
+    if value is None:
+        return "-"
+    if isinstance(value, float):
+        return f"{value:,.2f}"
+    if isinstance(value, int):
+        return f"{value:,}"
+    return str(value)
 
 
 def _pick_default_candidate_index(candidates: list[dict[str, Any]]) -> int:
@@ -75,9 +107,51 @@ def _post_json(url: str, payload: dict[str, Any]) -> dict[str, Any]:
         raise RuntimeError(f"{url} returned {response.status_code}: {detail}")
     return response.json()
 
+
+def _run_ml_and_interpret(feature_payload: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+    prediction = _post_json(ML_PREDICT_ENDPOINT, feature_payload)
+    interpretation = _post_json(
+        INTERPRET_ENDPOINT,
+        {
+            "features": feature_payload,
+            "prediction": prediction,
+        },
+    )
+    return prediction, interpretation
+
+
+def _render_final_result(prediction: dict[str, Any], interpretation: dict[str, Any]) -> None:
+    st.subheader("Final Result")
+    col1, col2 = st.columns(2)
+    with col1:
+        st.metric("Predicted Price", f"${prediction.get('predicted_price', 0):,.2f}")
+        st.write(f"Model: {prediction.get('model_version', 'N/A')}")
+    with col2:
+        position = str(interpretation.get("position_vs_market", "unknown"))
+        st.write("Position vs Market")
+        st.success(position.replace("_", " ").title())
+
+    st.subheader("Interpretation")
+    interpretation_text = interpretation.get("summary")
+    if not isinstance(interpretation_text, str) or not interpretation_text.strip():
+        interpretation_text = str(interpretation)
+    st.text(interpretation_text)
+
+    key_drivers = interpretation.get("key_drivers")
+    if isinstance(key_drivers, list) and key_drivers:
+        st.subheader("Key Drivers")
+        for item in key_drivers:
+            st.text(str(item))
+
+    caveats = interpretation.get("caveats")
+    if isinstance(caveats, list) and caveats:
+        st.subheader("Caveats")
+        for item in caveats:
+            st.text(str(item))
+
 st.set_page_config(page_title="House Price Assistant", page_icon="🏠", layout="wide")
 st.title("House Price Assistant")
-st.caption("Enter a house description, review extracted features, fill any missing values, then run prediction and interpretation.")
+st.caption("Enter a house description, compare the extracted feature sets, fill any missing values, then get the price and explanation.")
 
 with st.form("query_form"):
     query = st.text_area(
@@ -89,7 +163,7 @@ with st.form("query_form"):
         ),
         height=180,
     )
-    submitted = st.form_submit_button("Run Stage 1 Extraction")
+    submitted = st.form_submit_button("Run Full Analysis")
 
 if submitted:
     if not query.strip():
@@ -99,6 +173,9 @@ if submitted:
             try:
                 stage1_data = _post_json(STAGE1_EXTRACT_ENDPOINT, {"query": query.strip()})
                 st.session_state["stage1_data"] = stage1_data
+                candidates = stage1_data.get("candidates", []) if isinstance(stage1_data, dict) else []
+                if isinstance(candidates, list) and candidates:
+                    st.session_state["chosen_candidate_index"] = _pick_default_candidate_index(candidates)
             except (requests.RequestException, RuntimeError) as exc:
                 st.error(f"Stage 1 failed: {exc}")
 
@@ -108,24 +185,13 @@ if isinstance(stage1_data, dict):
     if not isinstance(candidates, list) or not candidates:
         st.error("No Stage 1 candidates were returned.")
     else:
-        st.subheader("Stage 1 Candidates")
-        labels: list[str] = []
-        for candidate in candidates:
-            prompt_version = candidate.get("prompt_version", "unknown")
-            output = candidate.get("output")
-            if isinstance(output, dict):
-                completeness = float(output.get("completeness", 0.0) or 0.0)
-                labels.append(f"{prompt_version} ({completeness:.0%} complete)")
-            else:
-                labels.append(f"{prompt_version} (failed)")
-
+        st.subheader("Which set of features suits your property the most?")
         default_idx = _pick_default_candidate_index(candidates)
-        chosen_label = st.radio(
-            "Choose candidate",
-            options=labels,
-            index=default_idx,
-        )
-        chosen_index = labels.index(chosen_label)
+        chosen_index = int(st.session_state.get("chosen_candidate_index", default_idx))
+        if chosen_index < 0 or chosen_index >= len(candidates):
+            chosen_index = default_idx
+            st.session_state["chosen_candidate_index"] = chosen_index
+
         selected_candidate = candidates[chosen_index]
 
         selected_output = selected_candidate.get("output")
@@ -146,8 +212,43 @@ if isinstance(stage1_data, dict):
             if value is None:
                 missing_fields.add(feature_name)
 
-        st.write("Extracted features")
-        st.json(base_features)
+        st.markdown("### Feature set details")
+        comparison_rows: list[dict[str, str]] = []
+        candidate_features_list: list[dict[str, Any]] = []
+        candidate_completeness: list[float | None] = []
+
+        for candidate in candidates:
+            output = candidate.get("output")
+            if isinstance(output, dict):
+                candidate_features_list.append(_canonicalize_features(output.get("features")))
+                candidate_completeness.append(float(output.get("completeness", 0.0) or 0.0))
+            else:
+                candidate_features_list.append(_canonicalize_features(None))
+                candidate_completeness.append(None)
+
+        for feature_name in FEATURE_ORDER:
+            row = {"Feature": FEATURE_LABELS.get(feature_name, feature_name)}
+            for idx, candidate_features in enumerate(candidate_features_list):
+                row[f"Feature Set {idx + 1}"] = _format_feature_value(candidate_features.get(feature_name))
+            comparison_rows.append(row)
+
+        st.table(comparison_rows)
+
+        # Keep buttons aligned under each feature-set column by reserving a spacer for the Feature column.
+        selection_columns = st.columns([2] + [1] * len(candidates))
+        for idx, candidate in enumerate(candidates):
+            with selection_columns[idx + 1]:
+                completeness = candidate_completeness[idx]
+                if completeness is None:
+                    st.caption(f"Feature Set {idx + 1}: unavailable")
+                else:
+                    st.caption(f"Feature Set {idx + 1} completeness: {completeness:.0%}")
+
+                is_selected = idx == chosen_index
+                button_text = "Selected" if is_selected else f"Select Feature Set {idx + 1}"
+                if st.button(button_text, key=f"select_candidate_{idx}", disabled=is_selected):
+                    st.session_state["chosen_candidate_index"] = idx
+                    st.rerun()
 
         if missing_fields:
             st.info("Some features are missing. Please enter them manually before running prediction.")
@@ -159,9 +260,10 @@ if isinstance(stage1_data, dict):
                     continue
 
                 existing = base_features.get(feature_name)
+                feature_label = FEATURE_LABELS.get(feature_name, feature_name)
                 if feature_name in FLOAT_FEATURES:
                     manual_values[feature_name] = st.number_input(
-                        f"{feature_name}",
+                        feature_label,
                         value=float(existing) if existing is not None else 0.0,
                         step=1.0,
                         format="%.2f",
@@ -169,13 +271,13 @@ if isinstance(stage1_data, dict):
                     )
                 else:
                     manual_values[feature_name] = st.number_input(
-                        f"{feature_name}",
+                        feature_label,
                         value=int(existing) if existing is not None else 0,
                         step=1,
                         key=f"manual_{feature_name}",
                     )
 
-            run_prediction = st.form_submit_button("Run ML + Interpretation")
+            run_prediction = st.form_submit_button("Get Final Price + Explanation")
 
         if run_prediction:
             # Fill missing fields with user-entered values before calling ML.
@@ -187,51 +289,45 @@ if isinstance(stage1_data, dict):
             if unresolved:
                 st.error(f"Missing required features: {', '.join(unresolved)}")
             else:
-                with st.spinner("Running ML prediction and interpretation..."):
-                    try:
-                        prediction = _post_json(ML_PREDICT_ENDPOINT, feature_payload)
-                        interpretation = _post_json(
-                            INTERPRET_ENDPOINT,
-                            {
-                                "features": feature_payload,
-                                "prediction": prediction,
-                            },
-                        )
-                    except (requests.RequestException, RuntimeError) as exc:
-                        st.error(f"Pipeline failed: {exc}")
-                    else:
-                        st.subheader("Final Result")
-                        col1, col2 = st.columns(2)
-                        with col1:
-                            st.metric("Predicted Price", f"${prediction.get('predicted_price', 0):,.2f}")
-                            st.write(f"Model: {prediction.get('model_version', 'N/A')}")
-                        with col2:
-                            position = str(interpretation.get("position_vs_market", "unknown"))
-                            st.write("Position vs Market")
-                            st.success(position.replace("_", " ").title())
+                if missing_fields:
+                    # Keep submission pending until user confirms manually-entered values.
+                    st.session_state["pending_feature_payload"] = feature_payload
+                    st.session_state["pending_missing_fields"] = sorted(missing_fields)
+                else:
+                    with st.spinner("Running ML prediction and interpretation..."):
+                        try:
+                            prediction, interpretation = _run_ml_and_interpret(feature_payload)
+                        except (requests.RequestException, RuntimeError) as exc:
+                            st.error(f"Pipeline failed: {exc}")
+                        else:
+                            _render_final_result(prediction, interpretation)
 
-                        st.subheader("Interpretation")
-                        st.write(interpretation.get("summary", "No summary available."))
+        pending_payload = st.session_state.get("pending_feature_payload")
+        if isinstance(pending_payload, dict):
+            pending_missing = st.session_state.get("pending_missing_fields", [])
+            st.warning("Please confirm your manually entered values before submitting to ML.")
+            if pending_missing:
+                st.write("You manually provided:")
+                for feature_name in pending_missing:
+                    label = FEATURE_LABELS.get(feature_name, feature_name)
+                    value = pending_payload.get(feature_name)
+                    st.write(f"- {label}: {_format_feature_value(value)}")
 
-                        key_drivers = interpretation.get("key_drivers", [])
-                        if key_drivers:
-                            st.write("Key Drivers")
-                            for item in key_drivers:
-                                st.write(f"- {item}")
+            confirm_col, cancel_col = st.columns(2)
+            with confirm_col:
+                if st.button("Confirm and Submit", key="confirm_manual_submission"):
+                    with st.spinner("Running ML prediction and interpretation..."):
+                        try:
+                            prediction, interpretation = _run_ml_and_interpret(pending_payload)
+                        except (requests.RequestException, RuntimeError) as exc:
+                            st.error(f"Pipeline failed: {exc}")
+                        else:
+                            _render_final_result(prediction, interpretation)
+                    st.session_state.pop("pending_feature_payload", None)
+                    st.session_state.pop("pending_missing_fields", None)
 
-                        caveats = interpretation.get("caveats", [])
-                        if caveats:
-                            st.write("Caveats")
-                            for item in caveats:
-                                st.write(f"- {item}")
-
-with st.expander("Backend endpoints"):
-    st.code(
-        "\n".join(
-            [
-                STAGE1_EXTRACT_ENDPOINT,
-                ML_PREDICT_ENDPOINT,
-                INTERPRET_ENDPOINT,
-            ]
-        )
-    )
+            with cancel_col:
+                if st.button("Cancel", key="cancel_manual_submission"):
+                    st.session_state.pop("pending_feature_payload", None)
+                    st.session_state.pop("pending_missing_fields", None)
+                    st.info("Submission canceled. You can edit values and submit again.")

@@ -25,6 +25,21 @@ REGISTRY_PATH = PROMPTS_DIR / 'registry.json'
 PRICE_SUMMARY_PATH = BACKEND_DIR / 'artifacts' / 'price_summary_stats.json'
 FEATURE_METRICS_PATH = BACKEND_DIR / 'artifacts' / 'ames_input_metrics.json'
 
+FEATURE_LABELS = {
+	'OverallQual': 'Overall quality',
+	'GrLivArea': 'Above-ground living area',
+	'GarageCars': 'Garage capacity',
+	'FullBath': 'Full bathrooms',
+	'YearBuilt': 'Year built',
+	'YearRemodAdd': 'Year remodeled',
+	'MasVnrArea': 'Masonry veneer area',
+	'Fireplaces': 'Fireplaces',
+	'BsmtFinSF1': 'Finished basement area',
+	'LotFrontage': 'Lot frontage',
+	'1stFlrSF': 'First floor area',
+	'OpenPorchSF': 'Open porch area',
+}
+
 
 def _is_missing_number(value: object) -> bool:
 	"""Return True for missing, zero, or non-numeric placeholders."""
@@ -159,6 +174,76 @@ def _parse_llm_json_response(raw_text: str) -> dict[str, object]:
 	return parsed
 
 
+def _with_readable_feature_names(text: str) -> str:
+	"""Replace schema keys with user-friendly feature names in free-form text."""
+	updated = text
+	for raw_name, label in FEATURE_LABELS.items():
+		updated = updated.replace(raw_name, label)
+	return updated
+
+
+def _normalize_key_drivers(raw_items: object) -> list[str]:
+	"""Return key drivers with readable feature names and plain user language."""
+	if not isinstance(raw_items, list):
+		return []
+
+	normalized: list[str] = []
+	for item in raw_items:
+		if not isinstance(item, str):
+			continue
+		text = _with_readable_feature_names(item).strip()
+		if text:
+			normalized.append(text)
+	return normalized
+
+
+def _normalize_caveats(raw_items: object) -> list[str]:
+	"""Keep caveats customer-friendly and avoid internal training-data language."""
+	default_caveat = (
+		'This price is an estimate. Real sale price can change based on neighborhood, location, nearby amenities, market timing, and property condition details.'
+	)
+
+	if not isinstance(raw_items, list):
+		return [default_caveat]
+
+	blocked_terms = (
+		'training',
+		'dataset',
+		'model error',
+		'missing values in the training',
+	)
+
+	filtered: list[str] = []
+	for item in raw_items:
+		if not isinstance(item, str):
+			continue
+		text = item.strip()
+		if not text:
+			continue
+		lower_text = text.lower()
+		if any(term in lower_text for term in blocked_terms):
+			continue
+		filtered.append(text)
+
+	if not filtered:
+		return [default_caveat]
+
+	if not any('estimate' in item.lower() for item in filtered):
+		filtered.append(default_caveat)
+
+	return filtered
+
+
+def _normalize_interpretation_payload(parsed: dict[str, object]) -> dict[str, object]:
+	"""Apply final response shaping rules for user-facing interpretation fields."""
+	normalized = dict(parsed)
+	if isinstance(normalized.get('summary'), str):
+		normalized['summary'] = _with_readable_feature_names(str(normalized['summary']))
+	normalized['key_drivers'] = _normalize_key_drivers(normalized.get('key_drivers'))
+	normalized['caveats'] = _normalize_caveats(normalized.get('caveats'))
+	return normalized
+
+
 def interpret_prediction(
 	features: Stage1ExtractedFeatures,
 	prediction_value: float,
@@ -185,6 +270,7 @@ def interpret_prediction(
 
 	raw_output = response.response or ''
 	parsed = _parse_llm_json_response(raw_output)
+	parsed = _normalize_interpretation_payload(parsed)
 
 	try:
 		return PredictionInterpretationResponse.model_validate(parsed)

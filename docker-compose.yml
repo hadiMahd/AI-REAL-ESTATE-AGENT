@@ -1,16 +1,16 @@
 services:
   # 1. The Redis Service
-  #redis_db:
-    #image: redis:alpine
-    #container_name: redis_container
-    #ports:
-    #  - "6379:6379"
+  redis_db:
+    image: redis:alpine
+    container_name: redis_container
+    ports:
+      - "6379:6379"
 
   # 2. Your FastAPI Service
   api_backend:
     build:
-      context: ./backend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: backend/Dockerfile
     container_name: backend_container
     ports:
       - "8000:8000"
@@ -19,15 +19,17 @@ services:
     environment:
       # Use the service name 'redis_db' as the hostname
       - REDIS_URL=redis://redis_db:6379/0
-    #depends_on:
-    #  - redis_db
+    depends_on:
+      - redis_db
 
   # --- FRONTEND ---
   streamlit_ui:
     build:
-      context: ./frontend   # Tell Docker to "stand" inside the frontend folder
-      dockerfile: Dockerfile # It looks for the file named 'Dockerfile' there
+      context: .
+      dockerfile: frontend/Dockerfile
     ports:
       - "8501:8501"
     environment:
-      - BACKEND_URL=http://localhost:8000
+      - BACKEND_URL=http://api_backend:8000
+    depends_on:
+      - api_backend

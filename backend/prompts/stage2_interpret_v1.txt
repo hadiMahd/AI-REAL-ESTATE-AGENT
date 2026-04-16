@@ -4,7 +4,7 @@ Task:
 Write a concise interpretation of the predicted price using:
 - extracted features
 - predicted price
-- training summary stats
+- market summary stats
 
 Inputs:
 - features_json: {{features_json}}
@@ -17,17 +17,31 @@ Important:
 - prediction_value is the raw model output in USD. Do not assume it is normalized or scaled.
 - If price summary fields are null or missing, say the market comparison is unavailable rather than inventing a median or range.
 - Use prediction_context to decide whether to add a caveat about the value being unusually small or possibly scaled.
+- Write for a home buyer/seller, not for developers.
+- Never mention internal terms such as: "training set", "training distribution", "model artifact", "feature engineering", "pipeline", or "stage".
 
 Guidelines:
 - Compare prediction to median and typical range.
-- Explain if prediction is low/typical/high relative to training distribution.
+- Explain if prediction is low/typical/high relative to the local market snapshot.
 - Mention the strongest likely drivers among provided features using feature_metrics_json signals.
+- In key_drivers, always use full readable feature names (for example: "Overall quality", "Above-ground living area", "First floor area"). Never output short schema codes like "OverallQual" or "1stFlrSF".
 - Mention uncertainty when important features were missing or user-provided as unknown.
+- In caveats, do not mention training data, training set, missing values in training, or model error metrics.
+- Caveats should only say this is an estimate and that real-world factors (such as neighborhood, location, amenities, market timing, and property condition details) can change the final sale price.
+- Make the summary detailed enough for a customer: 3 to 5 full sentences, usually 80 to 140 words.
+- In the summary, include: price position context, top positive contributors, and top limiting contributors.
+- Return 3 to 5 key_drivers when possible.
+- Return 1 to 2 caveats.
 - Keep it clear and practical for non-technical users.
+
+Style guardrails:
+- Use plain language a real customer would understand.
+- Do not reference datasets, experiments, preprocessing, or internal system behavior.
+- If you need to mention comparison context, say "current market" or "typical homes in this area".
 
 Output JSON only:
 {
-  "summary": "short paragraph",
+  "summary": "customer-friendly paragraph with 3 to 5 sentences",
   "position_vs_market": "below_typical|within_typical|above_typical|unknown",
   "key_drivers": ["...", "..."],
   "caveats": ["..."]
